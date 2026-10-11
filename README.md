@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # CareConnect — Multilingual, Privacy-First Elder-Care Platform
 
 CareConnect is a compassionate, privacy-first elder-care coordination platform designed for older adults living alone and their trusted caregivers. It bridges communication through accessible native Indian language support (**English**, **ಕನ್ನಡ - Kannada**, **മലയാളം - Malayalam**, **हिंदी - Hindi**), simplified daily wellbeing check-ins, health reminders, manually entered health readings, and a transparent help-request workflow.
@@ -195,3 +196,7 @@ The test suite validates:
 2. **TTS Accents**: Text-to-speech audio playback relies on available operating system voice packs. If native Kannada or Malayalam voices are not installed on the user's OS, the browser uses the closest available speech synthesizer.
 3. **No Sensor / Hardware Integration**: CareConnect intentionally does not claim to measure vitals with cameras or microphones. All health entries are transparently labeled as manually entered.
 4. **No Push / SMS in Offline Demo**: In demo mode, notifications and updates are delivered instantly in-app through the reactive store. SMS and WhatsApp gateways require Twilio or equivalent cloud provider credentials.
+=======
+# Care-Connect
+CareConnect Multilingual Elder Care Platform
+>>>>>>> 5f4aa5b9d7043eaf2b509b551d290dea98090123
