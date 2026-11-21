@@ -28,66 +28,161 @@ export function AuthPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [showSetupHelp, setShowSetupHelp] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError('');
+async function handleSubmit(e: React.FormEvent) {
+  e.preventDefault();
+  setError('');
+  setSuccessMessage('');
 
-    if (!email.includes('@')) {
-      setError(t('invalidEmail', language));
-      return;
-    }
-    if (password.length < 6) {
-      setError(t('invalidPassword', language));
-      return;
-    }
-    if (mode === 'signup' && !name.trim()) {
-      setError(t('requiredField', language));
-      return;
-    }
+  const cleanEmail = email.trim().toLowerCase();
 
-    // Check if user entered demo credentials in the form
-    const demoMatches = [DEMO_SENIOR_1, DEMO_SENIOR_2, DEMO_CAREGIVER_1, DEMO_CAREGIVER_2].find(
-      u => u.email.toLowerCase() === email.trim().toLowerCase()
-    );
+  if (!cleanEmail.includes('@')) {
+    setError(t('invalidEmail', language));
+    return;
+  }
 
-    if (demoMatches) {
-      enterDemoMode(demoMatches);
-      return;
-    }
+  if (password.length < 6) {
+    setError(t('invalidPassword', language));
+    return;
+  }
 
-    // Handle missing Supabase configuration honestly without inventing fake responses
-    if (!isSupabaseConfigured) {
-      setError(t('supabaseMissingNotice', language));
-      return;
-    }
+  if (mode === 'signup' && !name.trim()) {
+    setError(t('requiredField', language));
+    return;
+  }
 
-    // Live Supabase authentication
-    setLoading(true);
-    try {
-      if (mode === 'signup') {
-        const { data, error: err } = await supabase.auth.signUp({ email, password });
-        if (err) throw err;
-        if (data.user) {
-          await supabase.from('profiles').insert({
+  const demoMatches = [
+    DEMO_SENIOR_1,
+    DEMO_SENIOR_2,
+    DEMO_CAREGIVER_1,
+    DEMO_CAREGIVER_2,
+  ].find(u => u.email.toLowerCase() === cleanEmail);
+
+  if (demoMatches) {
+    enterDemoMode(demoMatches);
+    return;
+  }
+
+  if (!isSupabaseConfigured) {
+    setError(t('supabaseMissingNotice', language));
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    if (mode === 'signup') {
+   const { data, error: signupError } = await supabase.auth.signUp({
+  email: cleanEmail,
+  password,
+  options: {
+    data: {
+      display_name: name.trim(),
+      role,
+      preferred_language: language,
+    },
+  },
+});
+
+      if (signupError) throw signupError;
+
+      if (!data.user) {
+        throw new Error('Account creation did not return a user. Please try again later.');
+      }
+
+      // Supabase may require email confirmation before creating a session.
+      if (!data.session) {
+        setSuccessMessage(
+          'Your account was created. Please check your email for a confirmation link. After confirming, return here and sign in.'
+        );
+        return;
+      }
+
+      // Create the profile only after an authenticated session exists.
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(
+          {
             id: data.user.id,
             display_name: name.trim(),
             role,
             preferred_language: language,
-          });
-        }
-      } else {
-        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-        if (err) throw err;
+          },
+          { onConflict: 'id' }
+        );
+
+      if (profileError) throw profileError;
+
+      setSuccessMessage('Account created successfully. Opening your dashboard...');
+
+      // Reload so AuthProvider loads the newly created profile.
+      window.location.reload();
+    } else {
+      const { data, error: signinError } =
+        await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
+
+      if (signinError) throw signinError;
+
+      if (!data.user) {
+        throw new Error('Sign-in succeeded, but no user information was returned.');
       }
-    } catch (err: any) {
-      const msg = err?.message || (mode === 'signup' ? t('signupError', language) : t('loginError', language));
-      setError(msg);
-    } finally {
-      setLoading(false);
+
+      // Check whether this account already has a profile.
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      if (fetchError) throw fetchError;
+
+      // Create a missing profile using signup metadata.
+      if (!existingProfile) {
+        const metadata = data.user.user_metadata || {};
+
+        const savedRole =
+          metadata.role === 'caregiver' ? 'caregiver' : 'senior';
+
+        const savedLanguage = ['en', 'kn', 'ml', 'hi'].includes(
+          metadata.preferred_language
+        )
+          ? metadata.preferred_language
+          : language;
+
+        const { error: createProfileError } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: data.user.id,
+              display_name:
+                metadata.display_name || cleanEmail.split('@')[0],
+              role: savedRole,
+              preferred_language: savedLanguage,
+            },
+            { onConflict: 'id' }
+          );
+
+        if (createProfileError) throw createProfileError;
+      }
+
+      window.location.reload();
     }
+  } catch (err: any) {
+    setError(
+      err?.message ||
+        (mode === 'signup'
+          ? t('signupError', language)
+          : t('loginError', language))
+    );
+  } finally {
+    setLoading(false);
   }
+}
 
   function handleDemoClick(user: DemoUser) {
     enterDemoMode(user);
@@ -414,13 +509,17 @@ export function AuthPage() {
                       </div>
                     </div>
                   )}
+{error && (
+  <div className="bg-red-50 text-red-700 border border-red-200 px-3.5 py-2.5 rounded-xl text-xs font-medium leading-relaxed">
+    {error}
+  </div>
+)}
 
-                  {error && (
-                    <div className="bg-red-50 text-red-700 border border-red-200 px-3.5 py-2.5 rounded-xl text-xs font-medium leading-relaxed">
-                      {error}
-                    </div>
-                  )}
-
+{successMessage && (
+  <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3.5 py-2.5 rounded-xl text-xs font-medium leading-relaxed">
+    {successMessage}
+  </div>
+)}
                   <button
                     type="submit"
                     disabled={loading}
